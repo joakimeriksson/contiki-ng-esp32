@@ -45,7 +45,11 @@ void contiki_task(void *arg)
 
   linkaddr_set_node_addr((linkaddr_t *)eui64); 
 
-  netstack_init();
+  /* Contiki-NG develop removed the netstack_init() helper (os/net/netstack.h);
+   * this is the sequence os/contiki-main.c runs on every platform. */
+  NETSTACK_RADIO.init();
+  NETSTACK_MAC.init();
+  NETSTACK_NETWORK.init();
 
   LOG_INFO("Starting " CONTIKI_VERSION_STRING "\n");
   LOG_DBG("TARGET=%s", CONTIKI_TARGET_STRING);

@@ -40,6 +40,10 @@ list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/services/rpl-border-router/")
 list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/services/simple-energest/")
 # keep Lite, drop Classic
 list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/net/routing/rpl-classic/")
+# added upstream after the July 2025 snapshot; host/mbedtls code the port does not use
+list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/net/security/edhoc/")
+list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/net/security/cose/")
+list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/services/nat64/")
 if(CONTIKI_NULLNET)
   # no IPv6 stack at all: drop uIP, 6LoWPAN, routing, IP services
   list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/net/ipv6/")
