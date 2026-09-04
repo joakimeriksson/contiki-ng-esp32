@@ -44,6 +44,8 @@ list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/net/routing/rpl-classic/")
 list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/net/security/edhoc/")
 list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/net/security/cose/")
 list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/services/nat64/")
+# the submodule's own nested submodule (present after a recursive clone); IDF ships its own mbedtls
+list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/net/security/mbedtls/")
 if(CONTIKI_NULLNET)
   # no IPv6 stack at all: drop uIP, 6LoWPAN, routing, IP services
   list(FILTER CONTIKI_CORE EXCLUDE REGEX "/os/net/ipv6/")
