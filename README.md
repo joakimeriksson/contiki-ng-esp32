@@ -1,45 +1,41 @@
-# Contiki-NG on ESP32 Example
+# Contiki-NG on ESP32-C6 (ESP-IDF component)
 
-This project demonstrates how to run Contiki-NG examples on ESP32 targets using the ESP-IDF framework. It is configured to run the `rpl-udp` client example, which makes the ESP32 device act as a UDP client in an RPL-based IPv6 network. The device will join the network, find a RPL root (udp-server), and periodically send UDP packets to the server and receive responses.
+Contiki-NG running as a FreeRTOS task inside an unmodified ESP-IDF application on the ESP32-C6, with
+IEEE 802.15.4 through Espressif's `esp_ieee802154` driver. CSMA and RPL-Lite work; TSCH is not
+supported (the radio driver lacks the timestamp/poll-mode parameters and the rtimer runs from an
+`esp_timer` task).
 
-| Supported Targets | ESP32-C6 | ESP32-H2 |
-| ----------------- | -------- | -------- |
+| | |
+|---|---|
+| Contiki-NG | git submodule `components/contiki-ng-esp32c6/contiki-ng`, pinned to upstream `develop` `5968cdae9` |
+| ESP-IDF | v5.5.4 (`sdkconfig.defaults.esp32c6` carries the 802.15.4 driver settings) |
+| targets | ESP32-C6 (tested); ESP32-H2 has the same radio and should build, untested |
+| port | `components/contiki-ng-esp32c6/`: `arch/` (radio on `esp_ieee802154`, rtimer on `esp_timer`, clock, dbg-io, watchdog), `platform/` (`contiki-conf.h`, `contiki-main.c` = the Contiki task), `project/project-conf.h` |
+| apps | default: `examples/rpl-udp/udp-client.c` from the submodule; `-DCONTIKI_NULLNET=ON`: `apps/nullnet-xlevel.c` (nullnet broadcast probe, no IPv6/RPL) |
 
-## How to Use Example
+## Build
 
-Before project configuration and build, be sure to set the correct chip target using `idf.py set-target <chip_name>`. Note that this example requires a target with an 802.15.4 radio.
-
-### Hardware Required
-
-*   A development board with a supported ESP32 System-on-Chip (e.g., ESP32-C6-DevKitC).
-*   A USB cable for power supply and programming.
-*   Any other IoT device acting as root running the corresponding Contiki-NG `udp-server` example to communicate with.
-
-### Configure the Project
-
-You can configure project-specific settings by creating a `project-conf.h` file in the `main` directory. This file can be used to override default Contiki-NG configurations.
-
-### Build and Flash
-
-Run `idf.py -p PORT flash monitor` to build, flash, and monitor the project.
-
-(To exit the serial monitor, type `Ctrl-]`.)
-
-See the [Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/get-started/index.html) for full steps to configure and use ESP-IDF to build projects.
-
-## Example Output
-
-Once the device joins the 802.15.4 network, it will start sending UDP packets to the border router (server) and printing log messages about the communication. You will see output similar to the following:
-
-```text
-I (4525) App: Sending request 1 to fd00::212:4b00:14b5:d309
-I (4535) App: UDP: src=34817  dst=23182
-I (5755) App: Received response 'Hello from server' from fd00::212:4b00:14b5:d309
+```sh
+git clone --recursive <this repo>
+. $IDF_PATH/export.sh            # ESP-IDF v5.5.4
+idf.py set-target esp32c6
+idf.py build                     # rpl-udp client -> build/esp32-blink.bin
+idf.py -B build-nullnet -DCONTIKI_NULLNET=ON build
+idf.py -p /dev/cu.usbmodem* flash monitor
 ```
 
-## Troubleshooting
+The rpl-udp client joins any Contiki-NG RPL root on channel 26, PAN 0xabcd, and exchanges
+`hello N` / `hello N` responses with a `udp-server` root (see the upstream example).
 
-*   If the device is not sending UDP packets, ensure it is in range of the 802.15.4 border router.
-*   Verify that the border router is running and configured correctly with the same network keys.
-*   Check the serial monitor output for error messages from the network stack.
-*   Turn on DEBUG in the project-conf.h file.
+## Tested under emulation
+
+The same images run under [esp32sim](https://github.com/joakimeriksson/esp32sim) (`esp32sim-c6 --cooja`)
+as an external mote of [Cooja-NG](https://github.com/joakimeriksson/cooja-ng): the C6 joins an RPL DAG
+rooted at an emulated MSP430 (Sky) node next to a native Contiki-NG node, exchanges UDP, and
+acknowledges frames in hardware, deterministically (one trace hash over repeated runs). The PHY blob's
+baseband calibration is skipped there with `--stub bb_init=0`.
+
+## Status
+
+Experimental. Known: the port's `putchar` goes straight to the ROM UART while `printf` is newlib-buffered,
+so a Contiki log line without a trailing newline can interleave with IDF output.
