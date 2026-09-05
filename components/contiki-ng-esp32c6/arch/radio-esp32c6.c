@@ -32,6 +32,10 @@ static uint8_t  rx_buf[RX_BUF_LEN];
 static uint16_t rx_len;
 static volatile bool rx_pending;
 static int8_t  rx_rssi;
+/* Frame counters for the on-board display (components/contiki-display) */
+volatile uint32_t esp32c6_radio_tx_frames;
+volatile uint32_t esp32c6_radio_rx_frames;
+volatile int8_t esp32c6_radio_last_rssi;
 static uint8_t rx_lqi;
 static uint8_t tx_status = RADIO_TX_ERR;
 static uint32_t rx_timestamp;  /* in us, from the radio's internal timer */
@@ -62,7 +66,7 @@ static enum radio_state_e get_radio_state(void)
     if(esp_timer_get_time() - sfd_time_us > 1000) {
       /* If we have not received SFD in a while, assume we are idle */
       radio_state = RADIO_STATE_IDLE;
-      ESP_EARLY_LOGI(TAG, "Radio state changed to IDLE due to timeout");
+      ESP_EARLY_LOGD(TAG, "Radio state changed to IDLE due to timeout");
     }
   }
   return radio_state;
@@ -78,6 +82,8 @@ add_packet_to_buf(const uint8_t *data, size_t len, int8_t rssi, uint8_t lqi, uin
   memcpy(rx_buf, data, len);
   rx_len = len;
   rx_rssi = rssi;
+  esp32c6_radio_last_rssi = rssi;
+  esp32c6_radio_rx_frames++;
   rx_lqi = lqi;
   rx_timestamp = timestamp;
 
@@ -115,7 +121,7 @@ rx_done_cb(uint8_t *frame, esp_ieee802154_frame_info_t *info)
   /* remove lenght byte */
   add_packet_to_buf(frame + 1, len - 2, info->rssi, info->lqi, info->timestamp); /* -2 for length byte and FCS */
 
-  ESP_EARLY_LOGI(TAG, "RX: %u bytes, RSSI %d dBm, LQI %u, timestamp %u us (channel %u)",
+  ESP_EARLY_LOGD(TAG, "RX: %u bytes, RSSI %d dBm, LQI %u, timestamp %u us (channel %u)",
                  rx_len, rx_rssi, rx_lqi, rx_timestamp, info->channel);
   process_poll(&esp_ieee802154_process);     /* wake the driver process */
   esp_ieee802154_receive_handle_done(frame);
@@ -125,7 +131,7 @@ static IRAM_ATTR void
 rx_sfd_done_cb(void)
 {
   /* This callback is called when the SFD of the frame is received */
-  ESP_EARLY_LOGI(TAG, "RX SFD received");
+  ESP_EARLY_LOGD(TAG, "RX SFD received");
   /* You can handle SFD events here if needed */
   sfd_time_us = esp_timer_get_time(); /* Store the timestamp of SFD reception */
   radio_state = RADIO_STATE_RECEIVING; /* Update state if needed */
@@ -142,11 +148,11 @@ static IRAM_ATTR void tx_done_cb(const uint8_t *psdu,
                                  const uint8_t *ack,
                                  esp_ieee802154_frame_info_t *ack_info)
 {
-    ESP_EARLY_LOGI("TX", "Packet sent, ack=%s",
+    ESP_EARLY_LOGD("TX", "Packet sent, ack=%s",
                    ack ? "yes" : "no");
     radio_state = RADIO_STATE_IDLE;
     if(ack) {
-        ESP_EARLY_LOGI(TAG, "Ack received: RSSI %d dBm, LQI %u Ack Byte %02x%02x%02x%02x%02x",
+        ESP_EARLY_LOGD(TAG, "Ack received: RSSI %d dBm, LQI %u Ack Byte %02x%02x%02x%02x%02x",
                        ack_info->rssi, ack_info->lqi, ack[0], ack[1], ack[2], ack[3], ack[4]);
       tx_status = RADIO_TX_OK;
       int len = ack[0]; /* Length byte */
@@ -158,7 +164,7 @@ static IRAM_ATTR void tx_done_cb(const uint8_t *psdu,
     } else {
       /* Should check if we expected ACK or not... */
         tx_status = RADIO_TX_OK;
-        ESP_EARLY_LOGI("TX", "No Ack received");
+        ESP_EARLY_LOGD("TX", "No Ack received");
     }
 }
 /*---------------------------------------------------------------------------*/
@@ -166,8 +172,25 @@ static IRAM_ATTR void tx_fail_cb(const uint8_t *psdu,
                                  esp_ieee802154_tx_error_t err)
 {
     radio_state = RADIO_STATE_IDLE;
-    tx_status = RADIO_TX_ERR;
-    ESP_EARLY_LOGE("TX", "Tx failed: err=%d", err);
+    /* Map to Contiki's radio return codes so CSMA retransmits (NOACK/COLLISION)
+     * instead of dropping the packet (ERR). */
+    switch(err) {
+    case ESP_IEEE802154_TX_ERR_NO_ACK:
+    case ESP_IEEE802154_TX_ERR_INVALID_ACK:
+      tx_status = RADIO_TX_NOACK;
+      ESP_EARLY_LOGD("TX", "Tx failed: no ack (err=%d)", err);
+      break;
+    case ESP_IEEE802154_TX_ERR_CCA_BUSY:
+    case ESP_IEEE802154_TX_ERR_ABORT:
+    case ESP_IEEE802154_TX_ERR_COEXIST:
+      tx_status = RADIO_TX_COLLISION;
+      ESP_EARLY_LOGD("TX", "Tx failed: busy (err=%d)", err);
+      break;
+    default:
+      tx_status = RADIO_TX_ERR;
+      ESP_EARLY_LOGW("TX", "Tx failed: err=%d", err);
+      break;
+    }
 }
 /*---------------------------------------------------------------------------*/
 void esp_ieee802154_receive_failed(uint16_t error) { 
@@ -230,7 +253,7 @@ PROCESS_THREAD(esp_ieee802154_process, ev, data)
     PROCESS_YIELD_UNTIL(rx_pending);
     packetbuf_copyfrom(rx_buf, rx_len);
     rx_pending = false;  /* reset before input() to avoid re-entrancy */
-    ESP_LOGI(TAG, "RX: %u bytes", rx_len);
+    ESP_LOGD(TAG, "RX: %u bytes", rx_len);
     ESP_LOG_BUFFER_HEXDUMP(TAG, rx_buf, rx_len, ESP_LOG_DEBUG);
 
     packetbuf_set_attr(PACKETBUF_ATTR_RSSI, rx_rssi);
@@ -255,14 +278,15 @@ prepare(const void *payload, unsigned short len)
 static int
 transmit(unsigned short len)
 {
-  ESP_LOGI(TAG, "TX: %u bytes", len);
-  ESP_LOG_BUFFER_HEXDUMP(TAG, rx_buf, len, ESP_LOG_DEBUG);
+  ESP_LOGD(TAG, "TX: %u bytes", len);
+  ESP_LOG_BUFFER_HEXDUMP(TAG, tx_buf, len, ESP_LOG_DEBUG);
 
   if (radio_state != RADIO_STATE_IDLE) {
     ESP_LOGE(TAG, "Radio is not idle, cannot transmit %s", get_state_string());
     return RADIO_TX_ERR;
   }
   radio_state = RADIO_STATE_TRANSMITTING;
+  esp32c6_radio_tx_frames++;
   esp_ieee802154_transmit(tx_buf, false /* CSMA off for now */);
 
   /* Wait for the TX done callback to be called */
@@ -294,7 +318,7 @@ read(void *buf, unsigned short size)
     ESP_LOGE(TAG, "Failed to get packet from buffer");
     return 0;
   } else {
-    ESP_LOGI(TAG, "Read %u bytes from RX buffer", len);
+    ESP_LOGD(TAG, "Read %u bytes from RX buffer", len);
   }
   return len;
 }
