@@ -5,6 +5,7 @@
 #include "esp_task_wdt.h"
 #include "contiki-net.h"
 #include "dev/watchdog.h"
+#include "dev/leds.h"
 #include "esp_system.h"     /* esp_read_mac() */
 #include "esp_mac.h"
 #include "net/linkaddr.h"
@@ -31,6 +32,7 @@ void contiki_task(void *arg)
 
   ctimer_init();
   watchdog_init();
+  leds_init();
 
   /* Setup MAC address */
   uint8_t eui64[8];

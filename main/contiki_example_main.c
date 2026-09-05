@@ -11,7 +11,7 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
-#include "led_strip.h"
+#include "dev/leds.h"
 #include "sdkconfig.h"
 
 #include "nvs_flash.h"
@@ -22,6 +22,10 @@
 #include "contiki-net.h"
 #include "net/ipv6/simple-udp.h"
 #include "radio.h"
+
+#ifdef CONTIKI_DISPLAY
+#include "contiki_display.h"
+#endif
 
 #include "sys/log.h"
 #define LOG_MODULE "App"
@@ -56,42 +60,14 @@ static void uart_rx_task(void *arg)
 }
 static uint8_t s_led_state = 0;
 
-#define BLINK_GPIO CONFIG_BLINK_GPIO
-
-static led_strip_handle_t led_strip;
-
+/* Heartbeat on the RGB LED through Contiki's LED API (arch/leds-arch.c owns the
+ * WS2812): green blink once the node is reachable in the RPL DAG, red before. */
 static void blink_led(void)
 {
-    /* If the addressable LED is enabled */
+    leds_off(LEDS_ALL);
     if (s_led_state) {
-        /* Set the LED pixel using RGB from 0 (0%) to 255 (100%) for each color */
-        led_strip_set_pixel(led_strip, 0, 16, 16, 16);
-        /* Refresh the strip to send data */
-        led_strip_refresh(led_strip);
-    } else {
-        /* Set all LED off to clear all pixels */
-        led_strip_clear(led_strip);
+        leds_on(NETSTACK_ROUTING.node_is_reachable() ? LEDS_GREEN : LEDS_RED);
     }
-}
-
-static void configure_led(void)
-{
-    ESP_LOGI(TAG, "Example configured to blink addressable LED!");
-    /* LED strip initialization with the GPIO and pixels number*/
-    led_strip_config_t strip_config = {
-        .strip_gpio_num = BLINK_GPIO,
-        .max_leds = 1, // at least one LED on board
-    };
-
-    led_strip_rmt_config_t rmt_config = {
-        .resolution_hz = 10 * 1000 * 1000, // 10MHz
-        .flags.with_dma = false,
-    };
-
-    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
-
-    /* Set all LED off to clear all pixels */
-    led_strip_clear(led_strip);
 }
 
 void app_main(void)
@@ -119,14 +95,18 @@ void app_main(void)
 
     xTaskCreate(uart_rx_task, "uart_rx_task", 2048, NULL, 10, NULL);
 
-    /* Configure the peripheral according to the LED type */
-    configure_led();
+    /* Radio driver at INFO: one line per received frame and per unicast TX result.
+     * Set to ESP_LOG_DEBUG for SFD events and frame hexdumps. */
+    esp_log_level_set("ESP RADIO", ESP_LOG_INFO);
 
-    /* Full debug on Radio */
-    esp_log_level_set("ESP RADIO", ESP_LOG_DEBUG); 
+#ifdef CONTIKI_DISPLAY
+    /* LCD console: mirrors everything printed from here on; BOOT button toggles views */
+    contiki_display_start();
+#endif
 
-    /* Start Contiki Task */
+    /* Start Contiki Task (initialises the LEDs, so wait before using them) */
     xTaskCreate(contiki_task, "contiki", 8192, NULL, 5, NULL);
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     while (1) {
         blink_led();
