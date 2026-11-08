@@ -6,6 +6,7 @@
 #include "net/netstack.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_ieee802154.h"         /* APIs */
 #include "esp_ieee802154_types.h"   /* data structures & cb typedefs */
 #include "esp_timer.h" 
@@ -40,6 +41,9 @@ volatile int8_t esp32c6_radio_last_rssi;
 static uint8_t rx_lqi;
 static uint8_t tx_status = RADIO_TX_ERR;
 static uint32_t rx_timestamp;  /* in us, from the radio's internal timer */
+/* Given by the radio callbacks when they change radio_state; transmit() waits on it */
+static StaticSemaphore_t state_changed_storage;
+static SemaphoreHandle_t state_changed;
 
 enum radio_state_e {
   RADIO_STATE_RECEIVING,
@@ -110,6 +114,14 @@ get_packet_from_buf(uint8_t *buf, unsigned int len)
 } /* get_packet_from_buf() */
 
 /*---------------------------------------------------------------------------*/
+static IRAM_ATTR void
+notify_state_changed(void)
+{
+  BaseType_t woken = pdFALSE;
+  xSemaphoreGiveFromISR(state_changed, &woken);
+  portYIELD_FROM_ISR(woken);
+}
+/*---------------------------------------------------------------------------*/
 /* ISR-level callback from the Espressif driver                              */
 static IRAM_ATTR void
 rx_done_cb(uint8_t *frame, esp_ieee802154_frame_info_t *info)
@@ -117,6 +129,7 @@ rx_done_cb(uint8_t *frame, esp_ieee802154_frame_info_t *info)
   /* info->len includes FCS */
   size_t len = frame[0];
   radio_state = RADIO_STATE_IDLE;
+  notify_state_changed();
  
   if(len > RX_BUF_LEN) return;               /* drop oversize */
   /* remove lenght byte */
@@ -135,7 +148,12 @@ rx_sfd_done_cb(void)
   ESP_EARLY_LOGD(TAG, "RX SFD received");
   /* You can handle SFD events here if needed */
   sfd_time_us = esp_timer_get_time(); /* Store the timestamp of SFD reception */
-  radio_state = RADIO_STATE_RECEIVING; /* Update state if needed */
+  /* While transmitting this is the ACK's SFD: transmit() waits for tx_done_cb, which has the
+   * result (returning here gave the previous frame's tx_status) */
+  if(radio_state != RADIO_STATE_TRANSMITTING) {
+    radio_state = RADIO_STATE_RECEIVING;
+    notify_state_changed();
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -167,6 +185,7 @@ static IRAM_ATTR void tx_done_cb(const uint8_t *psdu,
         tx_status = RADIO_TX_OK;
         ESP_EARLY_LOGD("TX", "No Ack received");
     }
+    notify_state_changed();
 }
 /*---------------------------------------------------------------------------*/
 static IRAM_ATTR void tx_fail_cb(const uint8_t *psdu,
@@ -192,18 +211,21 @@ static IRAM_ATTR void tx_fail_cb(const uint8_t *psdu,
       ESP_EARLY_LOGW("TX", "Tx failed: err=%d", err);
       break;
     }
+    notify_state_changed();
 }
 /*---------------------------------------------------------------------------*/
 void esp_ieee802154_receive_failed(uint16_t error) { 
   /* This function can be overridden by the application to handle receive errors */
   ESP_EARLY_LOGE(TAG, "Receive failed with error: %u", error);
   radio_state = RADIO_STATE_IDLE;
+  notify_state_changed();
 }
 
 
 static int
 init(void)
 {
+  state_changed = xSemaphoreCreateBinaryStatic(&state_changed_storage);
 
   /* 1. Register callbacks */
     esp_ieee802154_event_cb_list_t cbs = {
@@ -288,11 +310,14 @@ transmit(unsigned short len)
   }
   radio_state = RADIO_STATE_TRANSMITTING;
   esp32c6_radio_tx_frames++;
+  xSemaphoreTake(state_changed, 0);  /* a give left from an earlier receive */
   esp_ieee802154_transmit(tx_buf, false /* CSMA off for now */);
 
   /* Wait for the TX done callback to be called */
   while(radio_state == RADIO_STATE_TRANSMITTING) {
-    vTaskDelay(pdMS_TO_TICKS(1));  /* Yield to other tasks */
+    /* Blocks until a callback changes the state (vTaskDelay(pdMS_TO_TICKS(1)) was 0 ticks at
+     * 100 Hz and spun, starving the lower-priority tasks) */
+    xSemaphoreTake(state_changed, portMAX_DELAY);
   }
 
   return tx_status; /* Return the status of the transmission */
