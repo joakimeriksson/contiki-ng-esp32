@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /* Text snapshot of the node's state for the LCD status view. */
 #ifndef CONTIKI_STATUS_H_
 #define CONTIKI_STATUS_H_

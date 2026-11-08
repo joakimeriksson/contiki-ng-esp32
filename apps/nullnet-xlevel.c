@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /* nullnet-xlevel: cross-level broadcast probe (E6 stage 1).
  * Same source builds for the ESP32-C6 (Contiki-NG on ESP-IDF) and for
  * sky/cooja targets in Contiki-NG. Payload is a fixed 4-byte little-endian

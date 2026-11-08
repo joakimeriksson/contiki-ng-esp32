@@ -131,3 +131,11 @@ baseband calibration is skipped there with `--stub bb_init=0`.
 
 Experimental. CSMA + RPL-Lite verified on hardware against a CC2538 root and under emulation; TSCH
 unsupported; ESP32-H2 untested.
+
+## License
+
+BSD-3-Clause ([LICENSE](LICENSE)), the same as Contiki-NG. Files with their own terms keep them:
+`components/contiki-display/lcd/Vernon_ST7789T.c/.h` (Espressif, Apache-2.0),
+`main/contiki_example_main.c` (ESP-IDF example, Public Domain / CC0), and
+`components/contiki-display/lcd/ST7789.c/.h` and `LVGL_Driver.c/.h` (after Waveshare's
+ESP32-C6-LCD-1.47 demo code). Contiki-NG itself is a submodule under its own BSD-3-Clause license.

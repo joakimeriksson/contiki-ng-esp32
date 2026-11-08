@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Debug-print back-end for Contiki-NG on ESP32-C6
  * ------------------------------------------------

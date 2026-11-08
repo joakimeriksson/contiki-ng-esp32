@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * LCD console for Contiki-NG on the Waveshare ESP32-C6-LCD-1.47.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 #include "console_ring.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"

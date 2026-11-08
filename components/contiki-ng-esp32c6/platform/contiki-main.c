@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 #include <assert.h>
 #include "contiki.h"
 #include "freertos/FreeRTOS.h"

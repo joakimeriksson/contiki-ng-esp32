@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * console_ring: a small line-oriented ring buffer that mirrors everything the
  * node prints (Contiki-NG logs through dbg_putchar, ESP_LOG through the esp_log

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 #ifndef RTIMER_ARCH_H_
 #define RTIMER_ARCH_H_
 

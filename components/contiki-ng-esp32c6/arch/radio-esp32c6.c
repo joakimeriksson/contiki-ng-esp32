@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /* radio-esp32c6.c  – minimal 802.15.4 driver for Contiki-NG */
 #include "contiki.h"
 #include "dev/radio.h"

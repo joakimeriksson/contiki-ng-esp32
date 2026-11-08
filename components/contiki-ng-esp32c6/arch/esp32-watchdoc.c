@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 #include "contiki.h"
 #include "esp_task_wdt.h"
 #include "dev/watchdog.h"

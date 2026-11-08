@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /* components/contiki-ng-esp32c6/platform/contiki-conf.h */
 #ifndef CONTIKI_CONF_H_
 #define CONTIKI_CONF_H_

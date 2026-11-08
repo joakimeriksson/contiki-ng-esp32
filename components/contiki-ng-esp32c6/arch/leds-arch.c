@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Contiki-NG LED driver for the ESP32-C6 boards with one WS2812 RGB pixel
  * (Waveshare ESP32-C6-LCD-1.47, ESP32-C6-DevKitC: GPIO 8).
